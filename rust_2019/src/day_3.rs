@@ -57,6 +57,7 @@ fn intersection(a: &HashMap<(i32, i32), usize>, b: &HashMap<(i32, i32), usize>) 
     aset.intersection(&bset).map(|x| **x).collect()
 }
 
+// These types are all a bit unneccesary but fun
 #[derive(PartialEq, Eq, Debug, Copy, Clone)]
 enum Dir {
     L,
