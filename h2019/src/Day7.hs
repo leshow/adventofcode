@@ -1,5 +1,6 @@
-module Day5 where
+module Day7 where
 
+import           Data.List                           ( delete )
 import           Control.Monad.RWS.Strict            ( RWS
                                                      , execRWS
                                                      )
@@ -14,6 +15,16 @@ import           Data.IntMap.Strict                  ( IntMap
 import qualified Data.IntMap.Strict                 as IntMap
 import           Data.List.Split                     ( splitOn )
 import           Data.Function                       ( (&) )
+
+phase :: Eq a => [a] -> [[a]]
+phase [] = [[]]
+phase xs = do
+    x  <- xs
+    ys <- phase (delete x xs)
+    pure $ x : ys
+
+
+
 
 type Input = Int
 type Address = Int
@@ -63,38 +74,32 @@ exec :: Address -> IntCodeM ()
 exec i = do
     program <- get
     case getCommand program of
-        Add p1 p2 out -> do
-            let result = getVal program p1 + getVal program p2
-            put $ IntMap.insert out result program
-            exec (i + 4)
-        Multiply p1 p2 out -> do
-            let result = getVal program p1 * getVal program p2
-            put $ IntMap.insert out result program
-            exec (i + 4)
-        Input out -> do
+        Add      p1 p2 out -> binOp (+) program p1 p2 out
+        Multiply p1 p2 out -> binOp (*) program p1 p2 out
+        Input out          -> do
             input <- ask
             put $ IntMap.insert out input program
             exec (i + 2)
         Output p1 -> do
             tell [getVal program p1]
             exec (i + 2)
-        JumpTrue p1 p2 -> if getVal program p1 /= 0
-            then exec $ getVal program p2
-            else exec (i + 3)
-        JumpFalse p1 p2 -> if getVal program p1 == 0
-            then exec $ getVal program p2
-            else exec (i + 3)
-        CmpLT p1 p2 out -> do
-            let result = if getVal program p1 < getVal program p2 then 1 else 0
-            put $ IntMap.insert out result program
-            exec (i + 4)
-        CmpEQ p1 p2 out -> do
-            let result =
-                    if getVal program p1 == getVal program p2 then 1 else 0
-            put $ IntMap.insert out result program
-            exec (i + 4)
-        Halt -> pure ()
+        JumpTrue  p1 p2 -> jmp (/=) program p1 p2
+        JumpFalse p1 p2 -> jmp (==) program p1 p2
+        CmpLT p1 p2 out -> cmp (<) program p1 p2 out
+        CmpEQ p1 p2 out -> cmp (==) program p1 p2 out
+        Halt            -> pure ()
   where
+    binOp f program p1 p2 out = do
+        let result = f (getVal program p1) (getVal program p2)
+        put $ IntMap.insert out result program
+        exec (i + 4)
+    jmp f program p1 p2 = if getVal program p1 `f` 0
+        then exec $ getVal program p2
+        else exec (i + 3)
+    cmp f program p1 p2 out = do
+        let result = if getVal program p1 `f` getVal program p2 then 1 else 0
+        put $ IntMap.insert out result program
+        exec (i + 4)
     getVal :: IntCode -> Param -> Value
     getVal program = \case
         Address a -> program ! a
