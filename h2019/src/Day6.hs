@@ -40,8 +40,6 @@ part2 orbits a b = Set.size justA + Set.size justB
     justA  = aTrans \\ bTrans
     justB  = bTrans \\ aTrans
 
-
-
 transfers :: Orbits -> Node -> Visited -> Visited
 transfers orbits node visited = case orbits !? node of
     Just newnode -> transfers orbits newnode $ Set.insert node visited
