@@ -1,750 +1,134 @@
 module Day2 where
 
-import qualified Data.Map.Strict                    as Map
-import           Data.Map.Strict                     ( Map )
+import           Control.Monad.RWS.Strict            ( RWS
+                                                     , execRWS
+                                                     )
+import           Control.Monad.Reader                ( ask )
+import           Control.Monad.State.Strict          ( get
+                                                     , put
+                                                     )
+import           Control.Monad.Writer.Strict         ( tell )
+import           Data.IntMap.Strict                  ( IntMap
+                                                     , (!)
+                                                     )
+import qualified Data.IntMap.Strict                 as IntMap
+import           Data.List.Split                     ( splitOn )
 import           Data.Function                       ( (&) )
-import           Data.Maybe                          ( fromJust )
 
-input :: [Int] -> Int -> Int -> Map Int Int
-input a v n = Map.fromList (zip [0 ..] a) & Map.insert 2 v & Map.insert 1 n
+type Input = Int
+type Address = Int
+type Value = Int
 
-op :: Int -> Maybe (Int -> Int -> Int)
-op 1 = Just (+)
-op 2 = Just (*)
-op _ = Nothing
+type IntCode = IntMap Value
+type IntCodeM = RWS Input [Int] IntCode
 
-run :: Map Int Int -> Int -> Maybe ([Int], Map Int Int)
-run mem buf = go 0 ([], mem)
+data Command
+    = Add Param Param Address
+    | Multiply Param Param Address
+    | Input Address
+    | Output Param
+    | JumpTrue Param Param
+    | JumpFalse Param Param
+    | CmpLT Param Param Address
+    | CmpEQ Param Param Address
+    | Halt
+
+data Param
+    = Address Address
+    | Value Value
+
+main :: IO ()
+main = do
+    f <- readFile "./day5.txt"
+    let program =
+            f & splitOn "," & map (read @Int) & zip [0 ..] & IntMap.fromList
+    print $ part1 program
+    print $ part2 program
+
+part1 :: IntCode -> Either [Int] Int
+part1 = runProgram 1
+
+part2 :: IntCode -> Either [Int] Int
+part2 = runProgram 5
+
+runProgram :: Int -> IntCode -> Either [Int] Int
+runProgram input program =
+    let (_, outputs) = execRWS (exec 0) input program
+    in  if
+            | null outputs              -> Left []
+            | any (/= 0) (init outputs) -> Left outputs
+            | otherwise                 -> Right $ last outputs
+
+exec :: Address -> IntCodeM ()
+exec i = do
+    program <- get
+    case getCommand program of
+        Add p1 p2 out -> do
+            let result = getVal program p1 + getVal program p2
+            put $ IntMap.insert out result program
+            exec (i + 4)
+        Multiply p1 p2 out -> do
+            let result = getVal program p1 * getVal program p2
+            put $ IntMap.insert out result program
+            exec (i + 4)
+        Input out -> do
+            input <- ask
+            put $ IntMap.insert out input program
+            exec (i + 2)
+        Output p1 -> do
+            tell [getVal program p1]
+            exec (i + 2)
+        JumpTrue p1 p2 -> if getVal program p1 /= 0
+            then exec $ getVal program p2
+            else exec (i + 3)
+        JumpFalse p1 p2 -> if getVal program p1 == 0
+            then exec $ getVal program p2
+            else exec (i + 3)
+        CmpLT p1 p2 out -> do
+            let result = if getVal program p1 < getVal program p2 then 1 else 0
+            put $ IntMap.insert out result program
+            exec (i + 4)
+        CmpEQ p1 p2 out -> do
+            let result =
+                    if getVal program p1 == getVal program p2 then 1 else 0
+            put $ IntMap.insert out result program
+            exec (i + 4)
+        Halt -> pure ()
   where
-    go :: Int -> ([Int], Map Int Int) -> Maybe ([Int], (Map Int Int))
-    go !i (out, mm) = do
-        code <- Map.lookup i mm
-        let (one, two, opcode) = getOp code
-        case opcode of
-            99 -> pure ([], mm)
-            1  -> do
-                idx <- look 3
-                v   <- op opcode <*> inx one 1 <*> inx one 2
-                go (i + 4) (out, Map.insert idx v mm)
-            2 -> do
-                idx <- look 3
-                v   <- op opcode <*> inx one 1 <*> inx one 2
-                go (i + 4) (out, Map.insert idx v mm)
-            3 -> do
-                idx <- look 1
-                go (i + 2) (out, Map.insert idx buf mm)
-            4 -> do
-                v <- inx one 1
-                go (i + 2) (out ++ [v], mm)
-            5 -> do
-                v    <- inx one 1
-                next <- if v > 0 then inx two 2 else pure (i + 3)
-                go next (out, mm)
-            6 -> do
-                v    <- inx one 1
-                next <- if v <= 0 then inx two 2 else pure (i + 3)
-                go next (out, mm)
-            7 -> do
-                idx <- look 3
-                a   <- inx one 1
-                b   <- inx two 2
-                go (i + 4) (out, Map.insert idx (if a < b then 1 else 0) mm)
-            8 -> do
-                idx <- look 3
-                a   <- inx one 1
-                b   <- inx two 2
-                go (i + 4) (out, Map.insert idx (if a == b then 1 else 0) mm)
-            _ -> pure (out, mm)
+    getVal :: IntCode -> Param -> Value
+    getVal program = \case
+        Address a -> program ! a
+        Value   v -> v
+    getCommand :: IntCode -> Command
+    getCommand program =
+        let (modes, opcode) = (program ! i) `divMod` 100
+        in
+            case opcode of
+                1 -> Add (parseParam modes 0) (parseParam modes 1) (rawParam 2)
+                2 -> Multiply (parseParam modes 0)
+                              (parseParam modes 1)
+                              (rawParam 2)
+                3 -> Input (rawParam 0)
+                4 -> Output (parseParam modes 0)
+                5 -> JumpTrue (parseParam modes 0) (parseParam modes 1)
+                6 -> JumpFalse (parseParam modes 0) (parseParam modes 1)
+                7 -> CmpLT (parseParam modes 0)
+                           (parseParam modes 1)
+                           (rawParam 2)
+                8 -> CmpEQ (parseParam modes 0)
+                           (parseParam modes 1)
+                           (rawParam 2)
+                99 -> Halt
+                _  -> error $ "Invalid opcode: " ++ show opcode
       where
-        look n = Map.lookup (i + n) mm
-        inx a ix = do
-            m <- look ix
-            if a then pure m else look m
+        rawParam digit = program ! (i + digit + 1)
+        parseParam modes digit =
+            getParam (getMode digit modes) (rawParam digit)
 
-getOp :: Int -> (Bool, Bool, Int)
-getOp code = (a, b, op)
-  where
-    (rest, op) = divMod code 100
-    [c, b, a]  = tail . map (== '1') . show . (+ 1000) $ rest
+getParam :: Int -> Int -> Param
+getParam 0    parameter = Address parameter
+getParam 1    parameter = Value parameter
+getParam mode _         = error $ "Invalid parameter mode: " ++ show mode
 
-part1 = run (Map.fromList (zip [0 ..] list)) 1
-list =
-    [ 3
-    , 225
-    , 1
-    , 225
-    , 6
-    , 6
-    , 1100
-    , 1
-    , 238
-    , 225
-    , 104
-    , 0
-    , 1102
-    , 35
-    , 92
-    , 225
-    , 1101
-    , 25
-    , 55
-    , 225
-    , 1102
-    , 47
-    , 36
-    , 225
-    , 1102
-    , 17
-    , 35
-    , 225
-    , 1
-    , 165
-    , 18
-    , 224
-    , 1001
-    , 224
-    , -106
-    , 224
-    , 4
-    , 224
-    , 102
-    , 8
-    , 223
-    , 223
-    , 1001
-    , 224
-    , 3
-    , 224
-    , 1
-    , 223
-    , 224
-    , 223
-    , 1101
-    , 68
-    , 23
-    , 224
-    , 101
-    , -91
-    , 224
-    , 224
-    , 4
-    , 224
-    , 102
-    , 8
-    , 223
-    , 223
-    , 101
-    , 1
-    , 224
-    , 224
-    , 1
-    , 223
-    , 224
-    , 223
-    , 2
-    , 217
-    , 13
-    , 224
-    , 1001
-    , 224
-    , -1890
-    , 224
-    , 4
-    , 224
-    , 102
-    , 8
-    , 223
-    , 223
-    , 1001
-    , 224
-    , 6
-    , 224
-    , 1
-    , 224
-    , 223
-    , 223
-    , 1102
-    , 69
-    , 77
-    , 224
-    , 1001
-    , 224
-    , -5313
-    , 224
-    , 4
-    , 224
-    , 1002
-    , 223
-    , 8
-    , 223
-    , 101
-    , 2
-    , 224
-    , 224
-    , 1
-    , 224
-    , 223
-    , 223
-    , 102
-    , 50
-    , 22
-    , 224
-    , 101
-    , -1800
-    , 224
-    , 224
-    , 4
-    , 224
-    , 1002
-    , 223
-    , 8
-    , 223
-    , 1001
-    , 224
-    , 5
-    , 224
-    , 1
-    , 224
-    , 223
-    , 223
-    , 1102
-    , 89
-    , 32
-    , 225
-    , 1001
-    , 26
-    , 60
-    , 224
-    , 1001
-    , 224
-    , -95
-    , 224
-    , 4
-    , 224
-    , 102
-    , 8
-    , 223
-    , 223
-    , 101
-    , 2
-    , 224
-    , 224
-    , 1
-    , 223
-    , 224
-    , 223
-    , 1102
-    , 51
-    , 79
-    , 225
-    , 1102
-    , 65
-    , 30
-    , 225
-    , 1002
-    , 170
-    , 86
-    , 224
-    , 101
-    , -2580
-    , 224
-    , 224
-    , 4
-    , 224
-    , 102
-    , 8
-    , 223
-    , 223
-    , 1001
-    , 224
-    , 6
-    , 224
-    , 1
-    , 223
-    , 224
-    , 223
-    , 101
-    , 39
-    , 139
-    , 224
-    , 1001
-    , 224
-    , -128
-    , 224
-    , 4
-    , 224
-    , 102
-    , 8
-    , 223
-    , 223
-    , 101
-    , 3
-    , 224
-    , 224
-    , 1
-    , 223
-    , 224
-    , 223
-    , 1102
-    , 54
-    , 93
-    , 225
-    , 4
-    , 223
-    , 99
-    , 0
-    , 0
-    , 0
-    , 677
-    , 0
-    , 0
-    , 0
-    , 0
-    , 0
-    , 0
-    , 0
-    , 0
-    , 0
-    , 0
-    , 0
-    , 1105
-    , 0
-    , 99999
-    , 1105
-    , 227
-    , 247
-    , 1105
-    , 1
-    , 99999
-    , 1005
-    , 227
-    , 99999
-    , 1005
-    , 0
-    , 256
-    , 1105
-    , 1
-    , 99999
-    , 1106
-    , 227
-    , 99999
-    , 1106
-    , 0
-    , 265
-    , 1105
-    , 1
-    , 99999
-    , 1006
-    , 0
-    , 99999
-    , 1006
-    , 227
-    , 274
-    , 1105
-    , 1
-    , 99999
-    , 1105
-    , 1
-    , 280
-    , 1105
-    , 1
-    , 99999
-    , 1
-    , 225
-    , 225
-    , 225
-    , 1101
-    , 294
-    , 0
-    , 0
-    , 105
-    , 1
-    , 0
-    , 1105
-    , 1
-    , 99999
-    , 1106
-    , 0
-    , 300
-    , 1105
-    , 1
-    , 99999
-    , 1
-    , 225
-    , 225
-    , 225
-    , 1101
-    , 314
-    , 0
-    , 0
-    , 106
-    , 0
-    , 0
-    , 1105
-    , 1
-    , 99999
-    , 1008
-    , 677
-    , 677
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1005
-    , 224
-    , 329
-    , 101
-    , 1
-    , 223
-    , 223
-    , 7
-    , 677
-    , 677
-    , 224
-    , 102
-    , 2
-    , 223
-    , 223
-    , 1006
-    , 224
-    , 344
-    , 101
-    , 1
-    , 223
-    , 223
-    , 108
-    , 677
-    , 677
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1006
-    , 224
-    , 359
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 7
-    , 677
-    , 226
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1005
-    , 224
-    , 374
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 1107
-    , 677
-    , 226
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1005
-    , 224
-    , 389
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 107
-    , 226
-    , 677
-    , 224
-    , 102
-    , 2
-    , 223
-    , 223
-    , 1005
-    , 224
-    , 404
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 1108
-    , 226
-    , 677
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1006
-    , 224
-    , 419
-    , 101
-    , 1
-    , 223
-    , 223
-    , 107
-    , 226
-    , 226
-    , 224
-    , 102
-    , 2
-    , 223
-    , 223
-    , 1005
-    , 224
-    , 434
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 108
-    , 677
-    , 226
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1006
-    , 224
-    , 449
-    , 101
-    , 1
-    , 223
-    , 223
-    , 108
-    , 226
-    , 226
-    , 224
-    , 102
-    , 2
-    , 223
-    , 223
-    , 1006
-    , 224
-    , 464
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 1007
-    , 226
-    , 226
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1005
-    , 224
-    , 479
-    , 101
-    , 1
-    , 223
-    , 223
-    , 8
-    , 677
-    , 226
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1006
-    , 224
-    , 494
-    , 101
-    , 1
-    , 223
-    , 223
-    , 1007
-    , 226
-    , 677
-    , 224
-    , 102
-    , 2
-    , 223
-    , 223
-    , 1006
-    , 224
-    , 509
-    , 101
-    , 1
-    , 223
-    , 223
-    , 7
-    , 226
-    , 677
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1005
-    , 224
-    , 524
-    , 101
-    , 1
-    , 223
-    , 223
-    , 107
-    , 677
-    , 677
-    , 224
-    , 102
-    , 2
-    , 223
-    , 223
-    , 1005
-    , 224
-    , 539
-    , 101
-    , 1
-    , 223
-    , 223
-    , 1008
-    , 677
-    , 226
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1005
-    , 224
-    , 554
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 1008
-    , 226
-    , 226
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1006
-    , 224
-    , 569
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 1108
-    , 226
-    , 226
-    , 224
-    , 102
-    , 2
-    , 223
-    , 223
-    , 1005
-    , 224
-    , 584
-    , 101
-    , 1
-    , 223
-    , 223
-    , 1107
-    , 226
-    , 677
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1005
-    , 224
-    , 599
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 8
-    , 226
-    , 677
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1006
-    , 224
-    , 614
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 1108
-    , 677
-    , 226
-    , 224
-    , 102
-    , 2
-    , 223
-    , 223
-    , 1005
-    , 224
-    , 629
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 8
-    , 226
-    , 226
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1005
-    , 224
-    , 644
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 1107
-    , 677
-    , 677
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1005
-    , 224
-    , 659
-    , 1001
-    , 223
-    , 1
-    , 223
-    , 1007
-    , 677
-    , 677
-    , 224
-    , 1002
-    , 223
-    , 2
-    , 223
-    , 1005
-    , 224
-    , 674
-    , 101
-    , 1
-    , 223
-    , 223
-    , 4
-    , 223
-    , 99
-    , 226
-    ]
+getMode :: Int -> Int -> Int
+getMode d x = (x `div` 10 ^ d) `mod` 10
