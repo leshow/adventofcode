@@ -14,8 +14,6 @@ pub fn run() {
         println!("part1 {}", res);
     }
     part2(25, 6);
-    // let layers = build_layers(25, 6);
-    // render(&layers, 25, 6);
 }
 
 fn part1() -> Option<usize> {
