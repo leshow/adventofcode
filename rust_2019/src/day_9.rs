@@ -1,4 +1,5 @@
 use self::Space::*;
+use ordered_float::OrderedFloat;
 use std::{
     collections::HashSet,
     ops::{Add, Sub},
@@ -17,28 +18,19 @@ pub(crate) fn run() {
                 .map(move |(x, _)| Point::new(x, y))
         })
         .collect::<Vec<Point>>();
-    let ans = part1(&asteroids);
-    println!("{:?}", ans);
+    println!("{:?}", part1(&asteroids));
 }
 
 fn part1(asteroids: &[Point]) -> Option<(Point, usize)> {
     let mut counts = asteroids
         .iter()
         .map(|ast| {
-            let mut angles = asteroids
+            let count = asteroids
                 .iter()
                 .filter(|&it| it != ast)
                 .map(|it| it.angle(ast))
-                .collect::<Vec<_>>();
-            angles.sort_by(|a, b| a.partial_cmp(b).unwrap());
-            let mut uniq = 0;
-            println!("{:?}", angles);
-            for i in 0..(angles.len() - 1) {
-                if angles[i] != angles[i + 1] {
-                    uniq += 1;
-                }
-            }
-            (*ast, uniq)
+                .collect::<HashSet<_>>();
+            (*ast, count.len())
         })
         .collect::<Vec<_>>();
 
@@ -88,21 +80,11 @@ impl Point {
         }
     }
 
-    pub(crate) fn angle(&self, other: &Point) -> FloatCmp {
+    pub(crate) fn angle(&self, other: &Point) -> OrderedFloat<f32> {
         let sub = *self - *other;
-        FloatCmp((sub.y as f32).atan2(sub.x as f32))
+        OrderedFloat((sub.y as f32).atan2(sub.x as f32))
     }
 }
-
-#[derive(Copy, Debug, Clone, PartialOrd)]
-struct FloatCmp(f32);
-
-impl PartialEq for FloatCmp {
-    fn eq(&self, other: &FloatCmp) -> bool {
-        (self.0 - other.0).abs() < 0.00001
-    }
-}
-impl Eq for FloatCmp {}
 
 impl From<char> for Space {
     fn from(c: char) -> Self {
