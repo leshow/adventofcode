@@ -1,8 +1,7 @@
 use self::Space::*;
 use ordered_float::OrderedFloat;
 use std::{
-    cmp::Reverse,
-    collections::{BinaryHeap, HashSet},
+    collections::{BinaryHeap, HashMap, HashSet},
     ops::{Add, Sub},
 };
 
@@ -19,10 +18,12 @@ pub(crate) fn run() {
                 .map(move |(x, _)| Point::new(x, y))
         })
         .collect::<Vec<Point>>();
-    println!("{:?}", part1(&asteroids));
+    let station = part1(&asteroids).unwrap();
+    println!("{:?}", station.asteroids);
+    println!("{:?}", part2(asteroids, station.pos));
 }
 
-fn part1(asteroids: &[Point]) -> Option<usize> {
+fn part1(asteroids: &[Point]) -> Option<Station> {
     let mut counts = asteroids
         .iter()
         .map(|ast| {
@@ -31,11 +32,32 @@ fn part1(asteroids: &[Point]) -> Option<usize> {
                 .filter(|&it| it != ast)
                 .map(|it| it.angle(ast))
                 .collect::<HashSet<_>>();
-            count.len()
+            Station::new(*ast, count.len())
         })
         .collect::<BinaryHeap<_>>();
 
     counts.pop()
+}
+
+fn part2(asteroids: Vec<Point>, station: Point) {
+    let map = asteroids.iter().fold(HashMap::new(), |mut map, it| {
+        let angle = it.angle(&station);
+        map.entry(it).or_insert(angle);
+        map
+    });
+    map.values()
+}
+
+#[derive(Debug, Copy, Eq, Ord, PartialEq, PartialOrd, Clone)]
+struct Station {
+    asteroids: usize,
+    pos: Point,
+}
+
+impl Station {
+    pub(crate) fn new(pos: Point, asteroids: usize) -> Self {
+        Self { pos, asteroids }
+    }
 }
 
 #[derive(Debug, Eq, Copy, Ord, PartialEq, PartialOrd, Clone)]
@@ -44,7 +66,7 @@ enum Space {
     Empty,
 }
 
-#[derive(Debug, Eq, Copy, Ord, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, Eq, Copy, Hash, Ord, PartialEq, PartialOrd, Clone)]
 struct Point {
     x: isize,
     y: isize,
@@ -94,4 +116,11 @@ impl From<char> for Space {
             _ => unreachable!(),
         }
     }
+}
+
+#[derive(Debug, Eq, Copy, Ord, PartialEq, PartialOrd, Clone)]
+struct LaserPoint {
+    pos: Point,
+    dist: OrderedFloat<f32>,
+    angle: OrderedFloat<f32>,
 }
