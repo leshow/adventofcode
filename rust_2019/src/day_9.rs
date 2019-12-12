@@ -1,7 +1,8 @@
 use self::Space::*;
 use ordered_float::OrderedFloat;
 use std::{
-    collections::HashSet,
+    cmp::Reverse,
+    collections::{BinaryHeap, HashSet},
     ops::{Add, Sub},
 };
 
@@ -21,7 +22,7 @@ pub(crate) fn run() {
     println!("{:?}", part1(&asteroids));
 }
 
-fn part1(asteroids: &[Point]) -> Option<(Point, usize)> {
+fn part1(asteroids: &[Point]) -> Option<usize> {
     let mut counts = asteroids
         .iter()
         .map(|ast| {
@@ -30,11 +31,10 @@ fn part1(asteroids: &[Point]) -> Option<(Point, usize)> {
                 .filter(|&it| it != ast)
                 .map(|it| it.angle(ast))
                 .collect::<HashSet<_>>();
-            (*ast, count.len())
+            count.len()
         })
-        .collect::<Vec<_>>();
+        .collect::<BinaryHeap<_>>();
 
-    counts.sort_by(|a, b| a.1.cmp(&b.1));
     counts.pop()
 }
 
