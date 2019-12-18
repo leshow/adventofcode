@@ -45,7 +45,7 @@ fn part2(asteroids: Vec<Point>, station: Point) {
         map.entry(it).or_insert(angle);
         map
     });
-    map.values()
+    
 }
 
 #[derive(Debug, Copy, Eq, Ord, PartialEq, PartialOrd, Clone)]
