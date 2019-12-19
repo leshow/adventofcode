@@ -1,73 +1,122 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 
 const DIRS: [(isize, isize); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
 
 pub(crate) fn run() {
-    let input = include_str!("../input/day_18_test.txt");
-    let grid = input
-        .lines()
-        .map(|line| line.chars().collect::<Vec<_>>())
-        .collect::<Vec<_>>();
-    count_steps(&grid);
+    let input = include_str!("../input/day_18.txt");
+    // dbg!(path(input));
+    println!("{}", pathfinder_part1(input));
 }
 
-fn count_steps(grid: &[Vec<char>]) {
-    let mut routeinfo = HashMap::new();
-    for y in 0..grid.len() {
-        for x in 0..grid[y].len() {
-            let node = grid[y][x];
-            if valid_key(node) {
-                routeinfo
-                    .entry(node)
-                    .or_insert_with(|| find_nearest(&grid, y, x));
-            }
-        }
-    }
-    // let cur = '@';
+fn path(input: &str) -> i32 {
+    let grid: Vec<Vec<char>> = input.lines().map(|line| line.chars().collect()).collect();
 
-    // for reachable in routeinfo[cur] {
-    // }
-    unimplemented!();
-}
+    let (x, y, _) = grid
+        .iter()
+        .enumerate()
+        .flat_map(|(ri, row)| row.iter().enumerate().map(move |(ci, c)| (ri, ci, c)))
+        .find(|x| x.2 == &'@')
+        .unwrap();
 
-fn find_nearest(grid: &[Vec<char>], i: usize, j: usize) -> HashMap<char, (usize, Vec<char>)> {
+    let doors: HashSet<char> = input
+        .chars()
+        .filter(|x| x.is_alphabetic())
+        .map(|x| x.to_ascii_uppercase())
+        .collect();
+
+    let start: (i32, i32, Vec<char>, i32) = (x as i32, y as i32, Vec::new(), 0);
+
     let mut q = VecDeque::new();
-    q.push_back((i, j, 0, vec![]));
-    let mut routeinfo = HashMap::new();
-    let mut visited = HashSet::new();
-    visited.insert((i, j));
+    q.push_back(start);
 
-    while let Some((x, y, dist, mut route)) = q.pop_front() {
-        let node = grid[x][y];
-        if !valid_char(node) && dist > 0 {
-            routeinfo.entry(node).or_insert((dist, route.clone()));
-            route.push(node);
+    while let Some((x, y, keys, dist)) = q.pop_front() {
+        if keys.len() == doors.len() {
+            return dist;
         }
-        visited.insert((x, y));
-        for dir in &DIRS {
-            let (nx, ny) = ((x as isize + dir.0) as usize, (y as isize + dir.1) as usize);
-            if grid[nx][ny] != '#'
-                && !visited.contains(&(nx, ny))
-                && nx < grid.len()
-                && ny < grid[nx].len()
-            {
-                q.push_back((nx, ny, dist + 1, route.clone()));
+        for (dx, dy) in &DIRS {
+            let x = x + *dx as i32;
+            let y = y + *dy as i32;
+            let target = grid[x as usize][y as usize];
+            if target == '#' {
+                continue;
             }
+            if target.is_alphabetic()
+                && target.is_ascii_uppercase()
+                && !keys.contains(&target.to_ascii_lowercase())
+            {
+                continue;
+            }
+            let mut keys = keys.clone();
+            if target.is_alphabetic() && target.is_ascii_lowercase() {
+                keys.push(target);
+                keys.sort();
+                keys.dedup();
+            }
+            q.push_back((x, y, keys, dist + 1));
         }
     }
-    routeinfo
+    0
 }
 
-fn valid_char(c: char) -> bool {
-    match c {
-        '.' | '@' | '#' => true,
-        _ => false,
-    }
+fn pathfinder_part1(input: &str) -> i32 {
+    let grid: Vec<Vec<char>> = input.lines().map(|line| line.chars().collect()).collect();
+
+    let (x, y, _) = grid
+        .iter()
+        .enumerate()
+        .flat_map(|(i, row)| row.iter().enumerate().map(move |(j, c)| (i, j, c)))
+        .find(|x| x.2 == &'@')
+        .unwrap();
+
+    let doors: HashSet<char> = input
+        .chars()
+        .filter(|x| x.is_alphabetic())
+        .map(|x| x.to_ascii_uppercase())
+        .collect();
+
+    let start: (i32, i32, Vec<char>) = (x as i32, y as i32, Vec::new());
+    let result = pathfinding::directed::bfs::bfs(
+        &start,
+        |(x, y, keys)| {
+            let mut moves = Vec::new();
+            DIRS.iter().for_each(|&(dx, dy)| {
+                do_move(&mut moves, &grid, x + dx as i32, y + dy as i32, &keys)
+            });
+            moves
+        },
+        |(_, _, keys)| keys.len() == doors.len(),
+    );
+
+    // let result = result.unwrap();
+
+    // for row in result.iter() {
+    //     println!("{:?}", row);
+    // }
+
+    result.unwrap().len() as i32 - 1
 }
-fn valid_key(c: char) -> bool {
-    match c {
-        '@' | 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm' | 'n'
-        | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' => true,
-        _ => false,
+
+fn do_move(
+    moves: &mut Vec<(i32, i32, Vec<char>)>,
+    grid: &[Vec<char>],
+    x: i32,
+    y: i32,
+    keys: &[char],
+) {
+    let node = grid[x as usize][y as usize];
+    if node == '#'
+        || (node.is_alphabetic()
+            && node.is_ascii_uppercase()
+            && !keys.contains(&node.to_ascii_lowercase()))
+    {
+        return;
     }
+
+    let mut keys = keys.to_vec();
+    if node.is_alphabetic() && node.is_ascii_lowercase() {
+        keys.push(node);
+        keys.sort();
+        keys.dedup();
+    }
+    moves.push((x, y, keys))
 }

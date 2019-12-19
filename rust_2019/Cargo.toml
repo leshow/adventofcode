@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 ordered-float = "1"
+pathfinding = "2"
