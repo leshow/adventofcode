@@ -14,7 +14,7 @@ fn path(input: &str) -> i32 {
     let (x, y, _) = grid
         .iter()
         .enumerate()
-        .flat_map(|(ri, row)| row.iter().enumerate().map(move |(ci, c)| (ri, ci, c)))
+        .flat_map(|(i, row)| row.iter().enumerate().map(move |(j, c)| (i, j, c)))
         .find(|x| x.2 == &'@')
         .unwrap();
 
